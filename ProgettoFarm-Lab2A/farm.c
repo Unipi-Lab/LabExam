@@ -10,7 +10,13 @@
 #include <dirent.h>
 #include <sys/wait.h>
 #include <boundedqueue.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#define UNIX_PATH_MAX 108 /* man 7 unix */
+#define SOCKNAME "./mysock"
+#define N 100
 
+   
 #include <util.h>
 
 #define MAX_FILENAME_LENGTH 255
@@ -33,6 +39,10 @@ void *Master(void *arg)
     char **regularfiles=((threadArgs_t*)arg)->regularfiles;
     int nregularfiles = ((threadArgs_t *)arg)->nregularfiles;
     int delay = ((threadArgs_t *)arg)->delay;
+    int microsecondsdelay=delay*1000;
+    
+
+    
 
     for (int i = 0; i < nregularfiles; i++)
     {
@@ -49,6 +59,7 @@ void *Master(void *arg)
             pthread_exit(NULL);
         }
         printf("Master %d pushed <%s>\n", myid,*data);
+        usleep(microsecondsdelay);
     }
     
     printf("The master finished\n");
@@ -120,23 +131,18 @@ void *Worker(void *arg)
     return NULL;
 }
 
-void Collector(int nthread, int qlen, int delay, int nfiles, char **filenames)
-{
-    
- /*   // cast everything of thread args
-
-    BQueue_t *q = ((threadArgs_t *)arg)->q;
-    int fileDimension = ((threadArgs_t *)arg)->fileDimension;
-*/
-    
-    return NULL;
-}
 
 void MasterWorker(int nthread,int qlen,int delay,int nfiles,char **filenames)
 {
    size_t filesize;
    char **regularfiles = malloc(MAX_FILENAME_LENGTH * sizeof(char) * 1000);
    int nregularfiles=0;
+
+   int fd_skt, fd_c;
+   char buf[N];
+   struct sockaddr_un sa;
+   strncpy(sa.sun_path, SOCKNAME, UNIX_PATH_MAX);
+   sa.sun_family = AF_UNIX;
 
    for (int i = 0; i < nfiles; i++)
    {
@@ -210,7 +216,7 @@ printf("Setting args\n");
                 exit(EXIT_FAILURE);
             }
         }
-/*
+
     printf("creating collector \n");
      //creating Collector process
         pid_t pid = fork();
@@ -220,21 +226,54 @@ printf("Setting args\n");
             perror("fork failed");
             exit(EXIT_FAILURE);
         }
-        else if (pid == 0)
+        else if (pid != 0)
         {
+            //MasterWorker
+            fd_skt = socket(AF_UNIX, SOCK_STREAM, 0);
+            bind(fd_skt, (struct sockaddr *)&sa,
 
-            // Collector
-            Collector(nthread, qlen, delay, nfiles, filenames);
+                 sizeof(sa));
+
+            listen(fd_skt, SOMAXCONN);
+            fd_c = accept(fd_skt, NULL, 0);
+            read(fd_c, buf, N);
+            printf("Server got: % s\n", buf);
+            write(fd_c, "Bye !", 5);
+            close(fd_skt);
+            close(fd_c);
             exit(EXIT_SUCCESS);
-        }
-        else
-        {
-            // MasterWorker
+
+            
             int status;
             // Wait for Collector
             waitpid(pid, &status, 0);
+
+            
         }
-*/
+        else
+        {
+            // Collector
+            fd_skt = socket(AF_UNIX, SOCK_STREAM, 0);
+            while (connect(fd_skt, (struct sockaddr *)&sa,
+
+                           sizeof(sa)) == -1)
+            {
+                if (errno == ENOENT)
+
+                    sleep(1); /* sock non esiste */
+
+                else
+                    exit(EXIT_FAILURE);
+            }
+
+            write(fd_skt, "Hallo !", 7);
+            read(fd_skt, buf, N);
+            printf("Client got: % s\n", buf);
+            close(fd_skt);
+
+            exit(EXIT_SUCCESS);
+        }
+
     // waiting master and workers
     printf("About to wait for master and workers\n");
     pthread_join(th[0], NULL);

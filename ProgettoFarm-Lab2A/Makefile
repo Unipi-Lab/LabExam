@@ -34,7 +34,8 @@ LIBS            = -lpthread
 
 # aggiungere qui altri targets
 TARGETS		= farm   \
-		  generafile
+		  generafile  \
+		  sockettest
 
 
 
@@ -56,6 +57,8 @@ all		: $(TARGETS)
 farm: farm.o boundedqueue.o
 	$(CC) $(CCFLAGS) $(INCLUDES) $(OPTFLAGS) $(LDFLAGS) -o $@ $^ $(LIBS)
 generafile: generafile.o 
+	$(CC) $(CCFLAGS) $(INCLUDES) $(OPTFLAGS) $(LDFLAGS) -o $@ $^ $(LIBS)
+sockettest: sockettest.o 
 	$(CC) $(CCFLAGS) $(INCLUDES) $(OPTFLAGS) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 
