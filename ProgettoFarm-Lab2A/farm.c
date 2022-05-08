@@ -13,13 +13,41 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/un.h>
+#include <signal.h>
 #define UNIX_PATH_MAX 108 /* man 7 unix */
 #define SOCKNAME "./farm.sck"
 #define N 100
+#define EC(sc, m)           \
+    if (sc == -1)           \
+    {                       \
+        perror(m);          \
+        exit(EXIT_FAILURE); \
+    }
 
 #include <util.h>
 
 #define MAX_FILENAME_LENGTH 255
+
+void handlerINT(int s)
+{
+    remove("farm.sck");
+    _exit(EXIT_SUCCESS);
+}
+void handlerHUP(int s)
+{
+    remove("farm.sck");
+    _exit(EXIT_SUCCESS);
+}
+void handlerQUIT(int s)
+{
+    remove("farm.sck");
+    _exit(EXIT_SUCCESS);
+}
+void handlerTERM(int s)
+{
+    remove("farm.sck");
+    _exit(EXIT_SUCCESS);
+}
 
 typedef struct threadArgs
 {
@@ -56,11 +84,9 @@ void *Master(void *arg)
             fprintf(stderr, "Errore: push\n");
             pthread_exit(NULL);
         }
-        printf("Master %d pushed <%s>\n", myid, *data);
+
         usleep(microsecondsdelay);
     }
-
-    printf("The master finished\n");
 
     return NULL;
 }
@@ -118,8 +144,6 @@ void *Worker(void *arg)
         i = 0;
         ++consumed;
 
-        printf("Worker %d extracted <%s>\n", myid, *data);
-
         FILE *in = NULL;
         char *line = NULL;
 
@@ -150,10 +174,6 @@ void *Worker(void *arg)
             perror("worker read");
             return (EXIT_FAILURE);
         }
-        printf("Worker %d got: % s\n", myid, buf);
-
-        printf("Worker %d summed a total of <%ld> for %s\n", myid, sum, *data);
-        // printf("%ld %s\n", sum, *data); final output
 
         fclose(in);
 
@@ -161,9 +181,6 @@ void *Worker(void *arg)
     }
     close(fd_skt);
 
-    printf("Worker %d consumed <%ld> files\n", myid, consumed);
-
-    printf("Worker %d finished\n", myid);
     return NULL;
 }
 
@@ -240,7 +257,7 @@ void Collector(struct sockaddr *psa)
                             if (nread > 0)
                             {
                                 buf[nread] = '\0';
-                                printf("Collector got : % s\n", buf);
+                                printf("% s\n", buf);
 
                                 if (write(fd, "Ty !", 4) == -1)
                                 {
@@ -265,6 +282,37 @@ void MasterWorker(int nthread, int qlen, int delay, int nfiles, char **filenames
     strcpy(sa.sun_path, SOCKNAME);
     sa.sun_family = AF_UNIX;
 
+    struct sigaction s;
+    sigset_t set;
+
+    EC(sigfillset(&set), "fillset");
+    EC(pthread_sigmask(SIG_SETMASK, &set, NULL), "sigmask");
+
+    EC(sigemptyset(&set), "emptyset");
+    sigaddset(&set, SIGINT);
+    sigaddset(&set, SIGHUP);
+    sigaddset(&set, SIGTERM);
+    sigaddset(&set, SIGQUIT);
+
+    EC(sigaction(SIGINT, NULL, &s), "sigaction1");
+
+    s.sa_mask = set;           // s.sa_mask contains signals to mask during handler execution
+    s.sa_handler = handlerHUP; // sa_handler can be SIG_IGN to ignore a signal..or a function
+    EC(sigaction(SIGHUP, &s, NULL), "sigaction4");
+
+    s.sa_handler = handlerINT;
+    EC(sigaction(SIGINT, &s, NULL), "sigaction2");
+
+    s.sa_handler = handlerTERM;
+    EC(sigaction(SIGTERM, &s, NULL), "sigaction3");
+
+    s.sa_handler = handlerQUIT;
+    EC(sigaction(SIGQUIT, &s, NULL), "sigaction5");
+
+    EC(sigemptyset(&set), "emptyset");
+
+    EC(pthread_sigmask(SIG_SETMASK, &set, NULL), "sigmask");
+
     for (int i = 0; i < nfiles; i++)
     {
         if (isRegular(filenames[i], &filesize) != 1)
@@ -279,11 +327,10 @@ void MasterWorker(int nthread, int qlen, int delay, int nfiles, char **filenames
         }
 
         regularfiles[nregularfiles] = filenames[i];
-        printf("Regular filename: %s\n", regularfiles[nregularfiles]);
+
         nregularfiles++;
     }
 
-    printf("Allocating memory for threads and threadargs\n");
     pthread_t *th;
     threadArgs_t *thArgs;
     th = malloc((nthread + 1) * sizeof(pthread_t));
@@ -302,7 +349,7 @@ void MasterWorker(int nthread, int qlen, int delay, int nfiles, char **filenames
         exit(EXIT_FAILURE);
     }
     // setting args for Master and Workers
-    printf("Setting args\n");
+
     thArgs[0].thid = 0;
     thArgs[0].q = q;
     thArgs[0].regularfiles = regularfiles;
@@ -315,8 +362,6 @@ void MasterWorker(int nthread, int qlen, int delay, int nfiles, char **filenames
         thArgs[i + 1].q = q;
         thArgs[i + 1].psa = &sa;
     }
-
-    printf("creating threads\n");
 
     // creating Master and Workers
 
@@ -334,7 +379,6 @@ void MasterWorker(int nthread, int qlen, int delay, int nfiles, char **filenames
         }
     }
 
-    printf("creating collector \n");
     // creating Collector process
     pid_t pid = fork();
 
@@ -347,6 +391,13 @@ void MasterWorker(int nthread, int qlen, int delay, int nfiles, char **filenames
     {
         // Collector
 
+        s.sa_handler = SIG_IGN;
+        EC(sigaction(SIGINT, &s, NULL), "sigaction1collector");
+        EC(sigaction(SIGHUP, &s, NULL), "sigaction2collector");
+        EC(sigaction(SIGQUIT, &s, NULL), "sigaction3collector");
+        EC(sigaction(SIGTERM, &s, NULL), "sigaction4collector");
+        EC(sigaction(SIGPIPE, &s, NULL), "sigaction5collector");
+
         Collector(&sa);
 
         exit(EXIT_SUCCESS);
@@ -355,7 +406,7 @@ void MasterWorker(int nthread, int qlen, int delay, int nfiles, char **filenames
     {
         // MasterWorker
         int status;
-        printf("About to wait for master and workers\n");
+
         pthread_join(th[0], NULL);
 
         char *end = "-1";
@@ -374,8 +425,6 @@ void MasterWorker(int nthread, int qlen, int delay, int nfiles, char **filenames
         deleteBQueue(q, NULL);
         free(th);
         free(thArgs);
-
-        printf("END OF MASTER WORKER\n");
 
         // Wait for Collector
         waitpid(pid, &status, 0);
@@ -427,7 +476,7 @@ int main(int argc, char *argv[])
         }
     }
     nfiles = argc - listBeginning;
-    printf("Number of arguments %d\n", argc);
+
     if (argc < 2)
     {
         usage(argv[0]);
@@ -441,12 +490,9 @@ int main(int argc, char *argv[])
     }
     for (int i = 0; i < nfiles; i++)
     {
-        printf("Filename: %s\n", filenames[i]);
     }
 
     MasterWorker(nthread, qlen, delay, nfiles, filenames);
-
-    printf("End of main\n");
 
     return 0;
 }
