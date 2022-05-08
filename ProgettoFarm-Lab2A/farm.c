@@ -81,8 +81,6 @@ void *Worker(void *arg)
     int fd_skt;
     char buf[N];
 
-    /*
-
     if ((fd_skt = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
     {
         perror("socket");
@@ -99,7 +97,7 @@ void *Worker(void *arg)
         else
             exit(EXIT_FAILURE);
     }
-*/
+
     while (1)
     {
         char **data;
@@ -136,22 +134,20 @@ void *Worker(void *arg)
             sum += (num * i);
             i++;
         }
-        /*
-                if (write(fd_skt, *data, MAX_FILENAME_LENGTH) == -1)
-                {
-                    perror("write");
-                    return (EXIT_FAILURE);
-                }
 
-                if (read(fd_skt, buf, N) == -1)
-                {
-                    perror("worker read");
-                    return (EXIT_FAILURE);
-                }
-                printf("Client got: % s\n", buf);
+        if (write(fd_skt, *data, 14) == -1)
+        {
+            perror("write");
+            return (EXIT_FAILURE);
+        }
 
+        if (read(fd_skt, buf, N) == -1)
+        {
+            perror("worker read");
+            return (EXIT_FAILURE);
+        }
+        printf("Worker %d got: % s\n", myid, buf);
 
-        */
         printf("Worker %d summed a total of <%ld> for %s\n", myid, sum, *data);
         // printf("%ld %s\n", sum, *data); final output
 
@@ -159,7 +155,7 @@ void *Worker(void *arg)
 
         free(data);
     }
-    // close(fd_skt);
+    close(fd_skt);
 
     printf("Worker %d consumed <%ld> files\n", myid, consumed);
 
@@ -170,90 +166,90 @@ void *Worker(void *arg)
 void Collector(struct sockaddr *psa)
 {
 
-    // int fd_sk, fd_c, fd_num = 0, fd;
-    // char buf[N];
-    // fd_set set, rdset;
-    // int nread;
-    // if ((fd_sk = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
-    // {
-    //     perror("socket");
-    //     return (EXIT_FAILURE);
-    // }
-    // if (bind(fd_sk, (struct sockaddr *)psa, sizeof(*psa)) == -1)
-    // {
-    //     perror("bind");
-    //     return (EXIT_FAILURE);
-    // }
-    // if (listen(fd_sk, SOMAXCONN) == -1)
-    // {
-    //     perror("listen");
-    //     return (EXIT_FAILURE);
-    // }
-    // if (fd_sk > fd_num)
-    //     fd_num = fd_sk;
-    // FD_ZERO(&set);
-    // FD_SET(fd_sk, &set);
+    int fd_sk, fd_c, fd_num = 0, fd;
+    char buf[N];
+    fd_set set, rdset;
+    int nread;
+    if ((fd_sk = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
+    {
+        perror("socket");
+        return (EXIT_FAILURE);
+    }
+    if (bind(fd_sk, (struct sockaddr *)psa, sizeof(*psa)) == -1)
+    {
+        perror("bind");
+        return (EXIT_FAILURE);
+    }
+    if (listen(fd_sk, SOMAXCONN) == -1)
+    {
+        perror("listen");
+        return (EXIT_FAILURE);
+    }
+    if (fd_sk > fd_num)
+        fd_num = fd_sk;
+    FD_ZERO(&set);
+    FD_SET(fd_sk, &set);
 
-    // while (1)
-    // {
-    //     rdset = set;
-    //     if (select(fd_num + 1, &rdset, NULL, NULL, NULL) == -1)
-    //     { /* gest errore */
-    //         perror("select");
-    //         exit(EXIT_FAILURE);
-    //     }
-    //     else
-    //     { /* select OK */
-    //         for (fd = 0; fd <= fd_num + 1; fd++)
-    //         {
-    //             if (FD_ISSET(fd, &rdset))
-    //             {
-    //                 if (fd == fd_sk)
-    //                 { /* sock connect pronto */
+    while (1)
+    {
+        rdset = set;
+        if (select(fd_num + 1, &rdset, NULL, NULL, NULL) == -1)
+        { /* gest errore */
+            perror("select");
+            exit(EXIT_FAILURE);
+        }
+        else
+        { /* select OK */
+            for (fd = 0; fd <= fd_num + 1; fd++)
+            {
+                if (FD_ISSET(fd, &rdset))
+                {
+                    if (fd == fd_sk)
+                    { /* sock connect pronto */
 
-    //                     if ((fd_c = accept(fd_sk, NULL, 0)) == -1)
-    //                     {
-    //                         perror("accept");
-    //                         return (EXIT_FAILURE);
-    //                     }
-    //                     FD_SET(fd_c, &set);
-    //                     if (fd_c > fd_num)
-    //                         fd_num = fd_c;
-    //                 }
-    //                 else
-    //                 { /* sock I/0 pronto */
+                        if ((fd_c = accept(fd_sk, NULL, 0)) == -1)
+                        {
+                            perror("accept");
+                            return (EXIT_FAILURE);
+                        }
+                        FD_SET(fd_c, &set);
+                        if (fd_c > fd_num)
+                            fd_num = fd_c;
+                    }
+                    else
+                    { /* sock I/0 pronto */
 
-    //                     if ((nread = read(fd, buf, N)) == -1)
-    //                     {
-    //                         perror("Collector read");
-    //                         return (EXIT_FAILURE);
-    //                     }
-    //                     if (nread == 0)
-    //                     { /* EOF client finito */
-    //                         FD_CLR(fd, &set);
-    //                         while (!FD_ISSET(fd_num, &set))
-    //                             fd_num--;
-    //                         close(fd);
-    //                     }
-    //                     else
-    //                     { /* nread !=0 */
-    //                         if (nread > 0)
-    //                         {
-    //                             buf[nread] = '\0';
-    //                             printf("Server got : % s\n", buf);
+                        if ((nread = read(fd, buf, N)) == -1)
+                        {
+                            perror("Collector read");
+                            return (EXIT_FAILURE);
+                        }
+                        if (nread == 0)
+                        { /* EOF client finito */
+                            FD_CLR(fd, &set);
+                            while (!FD_ISSET(fd_num, &set))
+                                fd_num--;
+                            close(fd);
+                        }
+                        else
+                        { /* nread !=0 */
+                            if (nread > 0)
+                            {
+                                buf[nread] = '\0';
+                                printf("Collector got : % s\n", buf);
 
-    //                             if (write(fd, "Ty !", 4) == -1)
-    //                             {
-    //                                 perror("write");
-    //                                 return (EXIT_FAILURE);
-    //                             }
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
+                                if (write(fd, "Ty !", 4) == -1)
+                                {
+                                    perror("write");
+                                    return (EXIT_FAILURE);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 void MasterWorker(int nthread, int qlen, int delay, int nfiles, char **filenames)
 {
@@ -347,7 +343,7 @@ void MasterWorker(int nthread, int qlen, int delay, int nfiles, char **filenames
     {
         // Collector
 
-        // Collector(&sa);
+        Collector(&sa);
 
         exit(EXIT_SUCCESS);
     }
