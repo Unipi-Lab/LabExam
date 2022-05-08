@@ -100,6 +100,8 @@ void *Worker(void *arg)
 
     while (1)
     {
+
+        char resstring[MAX_FILENAME_LENGTH];
         char **data;
         data = pop(q);
         // printf("Worker %d popped : <%s>\n",myid,data);
@@ -135,7 +137,9 @@ void *Worker(void *arg)
             i++;
         }
 
-        if (write(fd_skt, *data, 14) == -1)
+        sprintf(resstring, "%ld %s", sum, *data);
+
+        if (write(fd_skt, resstring, 21) == -1)
         {
             perror("write");
             return (EXIT_FAILURE);
