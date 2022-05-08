@@ -11,9 +11,10 @@
 #include <sys/wait.h>
 #include <boundedqueue.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <sys/un.h>
 #define UNIX_PATH_MAX 108 /* man 7 unix */
-#define SOCKNAME "./mysock"
+#define SOCKNAME "./farm.sck"
 #define N 100
 
 #include <util.h>
@@ -79,7 +80,14 @@ void *Worker(void *arg)
 
     int fd_skt;
     char buf[N];
-    fd_skt = socket(AF_UNIX, SOCK_STREAM, 0);
+
+    /*
+
+    if ((fd_skt = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
+    {
+        perror("socket");
+        return (EXIT_FAILURE);
+    }
 
     // try to connect to collector
     while (connect(fd_skt, (struct sockaddr *)psa,
@@ -91,10 +99,9 @@ void *Worker(void *arg)
         else
             exit(EXIT_FAILURE);
     }
-
+*/
     while (1)
     {
-
         char **data;
         data = pop(q);
         // printf("Worker %d popped : <%s>\n",myid,data);
@@ -102,12 +109,13 @@ void *Worker(void *arg)
         // printf("AFTER pop in worker\n");
         if (strcmp(data, "-1") == 0)
         {
-            printf("BEFORE free in worker\n");
 
             free(data);
             break;
         }
 
+        sum = 0;
+        i = 0;
         ++consumed;
 
         printf("Worker %d extracted <%s>\n", myid, *data);
@@ -128,19 +136,30 @@ void *Worker(void *arg)
             sum += (num * i);
             i++;
         }
+        /*
+                if (write(fd_skt, *data, MAX_FILENAME_LENGTH) == -1)
+                {
+                    perror("write");
+                    return (EXIT_FAILURE);
+                }
 
-        write(fd_skt, *data, MAX_FILENAME_LENGTH);
-        read(fd_skt, buf, N);
-        printf("Client got: % s\n", buf);
+                if (read(fd_skt, buf, N) == -1)
+                {
+                    perror("worker read");
+                    return (EXIT_FAILURE);
+                }
+                printf("Client got: % s\n", buf);
 
-        // inserisco l'EOS nella coda di uscita
+
+        */
+        printf("Worker %d summed a total of <%ld> for %s\n", myid, sum, *data);
+        // printf("%ld %s\n", sum, *data); final output
 
         fclose(in);
 
         free(data);
     }
-    close(fd_skt);
-    printf("Worker %d summed a total of <%ld>\n", myid, sum);
+    // close(fd_skt);
 
     printf("Worker %d consumed <%ld> files\n", myid, consumed);
 
@@ -148,6 +167,94 @@ void *Worker(void *arg)
     return NULL;
 }
 
+void Collector(struct sockaddr *psa)
+{
+
+    // int fd_sk, fd_c, fd_num = 0, fd;
+    // char buf[N];
+    // fd_set set, rdset;
+    // int nread;
+    // if ((fd_sk = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
+    // {
+    //     perror("socket");
+    //     return (EXIT_FAILURE);
+    // }
+    // if (bind(fd_sk, (struct sockaddr *)psa, sizeof(*psa)) == -1)
+    // {
+    //     perror("bind");
+    //     return (EXIT_FAILURE);
+    // }
+    // if (listen(fd_sk, SOMAXCONN) == -1)
+    // {
+    //     perror("listen");
+    //     return (EXIT_FAILURE);
+    // }
+    // if (fd_sk > fd_num)
+    //     fd_num = fd_sk;
+    // FD_ZERO(&set);
+    // FD_SET(fd_sk, &set);
+
+    // while (1)
+    // {
+    //     rdset = set;
+    //     if (select(fd_num + 1, &rdset, NULL, NULL, NULL) == -1)
+    //     { /* gest errore */
+    //         perror("select");
+    //         exit(EXIT_FAILURE);
+    //     }
+    //     else
+    //     { /* select OK */
+    //         for (fd = 0; fd <= fd_num + 1; fd++)
+    //         {
+    //             if (FD_ISSET(fd, &rdset))
+    //             {
+    //                 if (fd == fd_sk)
+    //                 { /* sock connect pronto */
+
+    //                     if ((fd_c = accept(fd_sk, NULL, 0)) == -1)
+    //                     {
+    //                         perror("accept");
+    //                         return (EXIT_FAILURE);
+    //                     }
+    //                     FD_SET(fd_c, &set);
+    //                     if (fd_c > fd_num)
+    //                         fd_num = fd_c;
+    //                 }
+    //                 else
+    //                 { /* sock I/0 pronto */
+
+    //                     if ((nread = read(fd, buf, N)) == -1)
+    //                     {
+    //                         perror("Collector read");
+    //                         return (EXIT_FAILURE);
+    //                     }
+    //                     if (nread == 0)
+    //                     { /* EOF client finito */
+    //                         FD_CLR(fd, &set);
+    //                         while (!FD_ISSET(fd_num, &set))
+    //                             fd_num--;
+    //                         close(fd);
+    //                     }
+    //                     else
+    //                     { /* nread !=0 */
+    //                         if (nread > 0)
+    //                         {
+    //                             buf[nread] = '\0';
+    //                             printf("Server got : % s\n", buf);
+
+    //                             if (write(fd, "Ty !", 4) == -1)
+    //                             {
+    //                                 perror("write");
+    //                                 return (EXIT_FAILURE);
+    //                             }
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+}
 void MasterWorker(int nthread, int qlen, int delay, int nfiles, char **filenames)
 {
     size_t filesize;
@@ -157,8 +264,6 @@ void MasterWorker(int nthread, int qlen, int delay, int nfiles, char **filenames
     struct sockaddr_un sa; /* ind AF_UNIX */
     strcpy(sa.sun_path, SOCKNAME);
     sa.sun_family = AF_UNIX;
-
-    run_server(&sa); /*collector*/
 
     for (int i = 0; i < nfiles; i++)
     {
@@ -228,65 +333,57 @@ void MasterWorker(int nthread, int qlen, int delay, int nfiles, char **filenames
             exit(EXIT_FAILURE);
         }
     }
-    /*
-        printf("creating collector \n");
-         //creating Collector process
-            pid_t pid = fork();
 
-            if (pid == -1)
-            {
-                perror("fork failed");
-                exit(EXIT_FAILURE);
-            }
-            else if (pid == 0)
-            {
-                // Collector
+    printf("creating collector \n");
+    // creating Collector process
+    pid_t pid = fork();
 
+    if (pid == -1)
+    {
+        perror("fork failed");
+        exit(EXIT_FAILURE);
+    }
+    else if (pid == 0)
+    {
+        // Collector
 
+        // Collector(&sa);
 
+        exit(EXIT_SUCCESS);
+    }
+    else
+    {
+        // MasterWorker
+        int status;
+        printf("About to wait for master and workers\n");
+        pthread_join(th[0], NULL);
 
+        char *end = "-1";
+        for (int i = 0; i < nthread; i++)
+        {
 
+            char *eos = malloc(sizeof(char) * MAX_FILENAME_LENGTH);
+            strcpy(eos, end);
+            push(q, eos);
+        }
+        for (int i = 0; i < nthread; i++)
+        {
+            pthread_join(th[i + 1], NULL);
+        }
 
+        deleteBQueue(q, NULL);
+        free(th);
+        free(thArgs);
 
-                exit(EXIT_SUCCESS);
+        printf("END OF MASTER WORKER\n");
 
-
-
-            }
-            else
-            {
-                //MasterWorker
-
-
-
-                int status;
-                // Wait for Collector
-                waitpid(pid, &status, 0);
-            }
-            */
+        // Wait for Collector
+        waitpid(pid, &status, 0);
+        remove("farm.sck");
+    }
 
     // waiting master and workers
-    printf("About to wait for master and workers\n");
-    pthread_join(th[0], NULL);
 
-    char *end = "-1";
-    for (int i = 0; i < nthread; i++)
-    {
-
-        char *eos = malloc(sizeof(char) * MAX_FILENAME_LENGTH);
-        strcpy(eos, end);
-        push(q, eos);
-    }
-    for (int i = 0; i < nthread; i++)
-    {
-        pthread_join(th[i + 1], NULL);
-    }
-
-    deleteBQueue(q, NULL);
-    free(th);
-    free(thArgs);
-
-    printf("END OF MASTER WORKER\n");
     return NULL;
 }
 
