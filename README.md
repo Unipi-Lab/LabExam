@@ -1,1 +1,1 @@
-[Requirements](ProgettoFarm-Lab2A\ProgettoFarm-CorsoA.pdf)
+[Requirements](LabExam/ProgettoFarm-Lab2A\ProgettoFarm-CorsoA.pdf)
